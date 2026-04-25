@@ -64,13 +64,20 @@ class ComparisonTabState extends State<ComparisonTab> {
   bool _isInitialized = false;
 
   bool _isManualJumping = false;
-
-  // --- 新增：用于显示“回到底部”气泡的状态 ---
-  bool _showScrollToBottomBtn = false;
+  bool _showScrollToBottomBtn = false; 
+  bool _hasNewMessage = false;
+  bool _isAtBottom = true;
 
   final Map<String, ValueNotifier<double?>> _downloadProgressMap = {};
 
-  bool get _canSendFile => true; //=> _userId == DEVELOPER_ID;
+  bool _currentChannelAllowAll = false;
+  List<String> _currentChannelAllowedIds = [];
+
+  bool get _canSendFile {
+    if (_userId == DEVELOPER_ID) return true; 
+    if (_currentChannelAllowAll) return true; 
+    return _currentChannelAllowedIds.contains(_userId); 
+  }
 
   final List<IconData> _avatars = [
     Icons.auto_awesome,
@@ -82,42 +89,47 @@ class ComparisonTabState extends State<ComparisonTab> {
   ];
 
   Stream<List<ChatMessage>>? _isarMessageStream;
-
-  // 记录当前频道被清空的时间点
   DateTime? _lastClearTime;
 
   @override
   void initState() {
     super.initState();
     initialize();
-    
-    // 监听滚动位置，判断是否需要显示气泡
-    _itemPositionsListener.itemPositions.addListener(_scrollListener);
+    _setupScrollListener();
   }
 
-  // 滚动监听逻辑
-  void _scrollListener() {
-    if (_itemPositionsListener.itemPositions.value.isEmpty) return;
+  // 修改后的滚动监听逻辑
+  void _setupScrollListener() {
+    _itemPositionsListener.itemPositions.addListener(() {
+      final positions = _itemPositionsListener.itemPositions.value;
+      if (positions.isEmpty) return;
 
-    // 获取当前视图中最后一个条目的索引
-    final lastVisibleIndex = _itemPositionsListener.itemPositions.value
-        .map((item) => item.index)
-        .reduce(max);
+      // 获取当前可视范围内最大的索引及其偏移量
+      final lastVisibleItem = positions
+          .where((p) => p.itemTrailingEdge > 0)
+          .reduce((max, p) => p.index > max.index ? p : max);
 
-    // 获取总消息数
-    final totalCount = widget.isar.chatMessages
-        .filter()
-        .channelNameEqualTo(_currentChannelName)
-        .countSync();
+      final totalCount = widget.isar.chatMessages
+          .filter()
+          .channelNameEqualTo(_currentChannelName)
+          .countSync();
 
-    // 如果距离底部超过一定距离（例如最后一条消息不在视野内），则显示气泡
-    final shouldShow = lastVisibleIndex < totalCount - 1;
+      // 判断逻辑：如果最大可见索引接近最后一条，或者最后一条已经在视野内
+      // 我们增加一个 buffer，比如距离底部还剩 1 条消息时也认为是在底部
+      bool atBottomNow = (lastVisibleItem.index >= totalCount - 2);
 
-    if (shouldShow != _showScrollToBottomBtn) {
-      setState(() {
-        _showScrollToBottomBtn = shouldShow;
-      });
-    }
+      if (atBottomNow != _isAtBottom) {
+        setState(() {
+          _isAtBottom = atBottomNow;
+          if (_isAtBottom) {
+            _showScrollToBottomBtn = false;
+            _hasNewMessage = false; 
+          } else {
+            _showScrollToBottomBtn = true;
+          }
+        });
+      }
+    });
   }
 
   Future<void> _preparePaths() async {
@@ -171,14 +183,12 @@ class ComparisonTabState extends State<ComparisonTab> {
     await _preparePaths();
     
     final machineId = await _getUniqueId();
-    
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
 
     final savedUsername = prefs.getString('username') ?? "";
     final savedAvatarIndex = prefs.getInt('avatarIndex') ?? 0;
     
-    // 加载当前频道的清空记录
     final clearTimeStr = prefs.getString('clear_time_$_currentChannelName');
     if (clearTimeStr != null) {
       _lastClearTime = DateTime.tryParse(clearTimeStr);
@@ -200,8 +210,34 @@ class ComparisonTabState extends State<ComparisonTab> {
     });
 
     _updateMessageStream();
+    _fetchChannelConfig(); 
     _startSyncing();
     _setupPresence();
+  }
+
+  Future<void> _fetchChannelConfig() async {
+    if (_activeClient == null) return;
+    try {
+      final data = await _activeClient!
+          .from('channel_configs')
+          .select('allow_all_files, allowed_machine_ids')
+          .eq('channel_name', _currentChannelName)
+          .maybeSingle();
+
+      if (data != null) {
+        setState(() {
+          _currentChannelAllowAll = data['allow_all_files'] ?? false;
+          _currentChannelAllowedIds = List<String>.from(data['allowed_machine_ids'] ?? []);
+        });
+      } else {
+        setState(() {
+          _currentChannelAllowAll = false;
+          _currentChannelAllowedIds = [];
+        });
+      }
+    } catch (e) {
+      debugPrint("获取权限配置发生错误: $e");
+    }
   }
 
   void _updateMessageStream() {
@@ -216,7 +252,6 @@ class ComparisonTabState extends State<ComparisonTab> {
 
   @override
   void dispose() {
-    _itemPositionsListener.itemPositions.removeListener(_scrollListener);
     _supabaseSubscription?.cancel();
     if (_presenceChannel != null) _activeClient?.removeChannel(_presenceChannel!);
     _textController.dispose();
@@ -225,7 +260,6 @@ class ComparisonTabState extends State<ComparisonTab> {
     super.dispose();
   }
 
-  // --- 修改后的清空聊天记录逻辑（包含缓存清理） ---
   Future<void> _clearChatHistory() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -246,11 +280,8 @@ class ComparisonTabState extends State<ComparisonTab> {
     if (confirm == true) {
       final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
-      
-      // 1. 记录逻辑清空时间点
       await prefs.setString('clear_time_$_currentChannelName', now.toIso8601String());
       
-      // 2. 删除本地数据库记录
       await widget.isar.writeTxn(() async {
         await widget.isar.chatMessages
             .filter()
@@ -258,17 +289,15 @@ class ComparisonTabState extends State<ComparisonTab> {
             .deleteAll();
       });
 
-      // 3. 清理 RocoKingdomCache 目录下的物理缓存文件
       try {
         await customCacheManager.emptyCache();
       } catch (e) {
         debugPrint("清理缓存文件失败: $e");
       }
 
-      // 4. 重置内存状态
       setState(() {
         _lastClearTime = now;
-        _downloadProgressMap.clear(); // 清空下载状态
+        _downloadProgressMap.clear();
       });
 
       _showSuccessSnackBar("记录与缓存已彻底清空");
@@ -373,17 +402,25 @@ class ComparisonTabState extends State<ComparisonTab> {
       _lastClearTime = clearTimeStr != null ? DateTime.tryParse(clearTimeStr) : null;
       _onlineCount = 0;
       _isarMessageStream = null;
+      _currentChannelAllowAll = false;
+      _currentChannelAllowedIds = [];
+      _hasNewMessage = false;
+      _showScrollToBottomBtn = false;
+      
       if (url != null && key != null) {
         _activeClient = SupabaseClient(url, key);
       } else {
         _activeClient = Supabase.instance.client;
       }
     });
+
     _updateMessageStream();
+    _fetchChannelConfig(); 
     _startSyncing();
     _setupPresence();
   }
 
+  // 修改后的同步逻辑
   void _startSyncing() {
     if (_activeClient == null) return;
     final String syncContextChannel = _currentChannelName;
@@ -397,13 +434,19 @@ class ComparisonTabState extends State<ComparisonTab> {
       await widget.isar.writeTxn(() async {
         for (var map in data) {
           final createdAt = DateTime.parse(map['created_at']).toLocal();
-          
-          if (_lastClearTime != null && createdAt.isBefore(_lastClearTime!)) {
-            continue;
-          }
+          if (_lastClearTime != null && createdAt.isBefore(_lastClearTime!)) continue;
 
           final remoteId = map['id'].toString();
           final String combinedKey = "${remoteId}_$syncContextChannel";
+          
+          // 检查 Isar 中是否已存在（避免重复插入引发的 UI 跳动）
+          final existing = await widget.isar.chatMessages
+              .filter()
+              .remoteChannelKeyEqualTo(combinedKey)
+              .findFirst();
+
+          if (existing != null) continue;
+
           final msg = ChatMessage()
             ..remoteId = remoteId
             ..channelName = syncContextChannel
@@ -417,6 +460,21 @@ class ComparisonTabState extends State<ComparisonTab> {
             ..replyToData = map['reply_to'] != null ? jsonEncode(map['reply_to']) : null
             ..status = 0;
           await widget.isar.chatMessages.put(msg);
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (msg.userId == _userId) {
+              // 只有当是“发送”操作触发的同步，或者就在底部时才跳转
+              if (_isAtBottom || _isManualJumping) {
+                 _scrollToBottom();
+              }
+            } else {
+              if (_isAtBottom) {
+                _scrollToBottom();
+              } else {
+                if (mounted) setState(() => _hasNewMessage = true);
+              }
+            }
+          });
         }
       });
     });
@@ -437,23 +495,17 @@ class ComparisonTabState extends State<ComparisonTab> {
   }
 
   void _deleteChannel(String name) async {
-    setState(() {
-      _customChannels.removeWhere((element) => element['name'] == name);
-    });
+    setState(() => _customChannels.removeWhere((element) => element['name'] == name));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('custom_channels', jsonEncode(_customChannels));
-    if (_currentChannelName == name) {
-      _switchChannel("基础频道");
-    }
+    if (_currentChannelName == name) _switchChannel("基础频道");
   }
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _activeClient == null) return;
-    if (_username.isEmpty) {
-      _showProfileDialog(isFirstTime: true);
-      return;
-    }
+    if (_username.isEmpty) { _showProfileDialog(isFirstTime: true); return; }
+    
     final tempReply = _replyingTo;
     _textController.clear();
     _clearReplyState();
@@ -461,10 +513,7 @@ class ComparisonTabState extends State<ComparisonTab> {
     _isManualJumping = true;
     final localMsg = await _insertOptimisticMessage(text, false);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
-      _isManualJumping = false; 
-    });
+    _scrollToBottom();
 
     try {
       final response = await _activeClient!.from('messages').insert({
@@ -474,6 +523,7 @@ class ComparisonTabState extends State<ComparisonTab> {
         'pet_id': _avatarIndex,
         'is_image': false,
         'reply_to': tempReply,
+        'channel_name': _currentChannelName,
       }).select().single();
 
       final String realRemoteId = response['id'].toString();
@@ -485,30 +535,32 @@ class ComparisonTabState extends State<ComparisonTab> {
         await widget.isar.chatMessages.put(localMsg);
       });
     } catch (e) {
-      debugPrint("消息发送失败: $e");
       await widget.isar.writeTxn(() async {
         localMsg.status = 2; 
         await widget.isar.chatMessages.put(localMsg);
+      });
+    } finally {
+      // 延迟重置，确保同步流回来的消息能匹配到这个状态
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isManualJumping = false;
       });
     }
   }
 
   Future<void> _uploadAndSendFile(File file) async {
-    if (_activeClient == null || !_canSendFile) return;
-    if (_username.isEmpty) {
-      _showProfileDialog(isFirstTime: true);
+    if (_activeClient == null || !_canSendFile) {
+      _showErrorSnackBar("您没有权限在该频道发送文件");
       return;
     }
+    if (_username.isEmpty) { _showProfileDialog(isFirstTime: true); return; }
+    
     final ext = p.extension(file.path).toLowerCase();
     final isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].contains(ext);
     
     _isManualJumping = true;
     final localMsg = await _insertOptimisticMessage(file.path, isImage);
     
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
-      _isManualJumping = false;
-    });
+    _scrollToBottom();
 
     final fileName = '${DateTime.now().millisecondsSinceEpoch}_${p.basename(file.path)}';
     final filePath = 'chat_files/$fileName';
@@ -523,6 +575,7 @@ class ComparisonTabState extends State<ComparisonTab> {
         'pet_id': _avatarIndex,
         'is_image': isImage,
         'reply_to': _replyingTo,
+        'channel_name': _currentChannelName,
       }).select().single();
 
       final String realRemoteId = response['id'].toString();
@@ -539,6 +592,10 @@ class ComparisonTabState extends State<ComparisonTab> {
       await widget.isar.writeTxn(() async {
         localMsg.status = 2;
         await widget.isar.chatMessages.put(localMsg);
+      });
+    } finally {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _isManualJumping = false;
       });
     }
   }
@@ -572,19 +629,23 @@ class ComparisonTabState extends State<ComparisonTab> {
       int index = messages.indexWhere((m) => (m.remoteId ?? m.id.toString()) == targetId);
       
       if (index != -1) {
-        setState(() => _highlightedMsgId = targetId);
+        setState(() {
+          _highlightedMsgId = targetId;
+        });
+
         _itemScrollController.scrollTo(
           index: index,
           duration: const Duration(milliseconds: 800),
           curve: Curves.fastOutSlowIn,
-          alignment: 0.1, 
+          alignment: 0.1,
         );
+
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) setState(() => _highlightedMsgId = null);
         });
       }
     } catch (e) {
-      _showErrorSnackBar("跳转失败");
+      debugPrint("跳转失败: $e");
     }
   }
 
@@ -595,7 +656,10 @@ class ComparisonTabState extends State<ComparisonTab> {
       onDragExited: (_) => setState(() => _isDragging = false),
       onDragDone: (details) async {
         setState(() => _isDragging = false);
-        for (final file in details.files) _uploadAndSendFile(File(file.path));
+        if (details.files.isNotEmpty) {
+          final file = File(details.files.first.path);
+          _uploadAndSendFile(file);
+        }
       },
       child: Stack(
         children: [
@@ -611,60 +675,29 @@ class ComparisonTabState extends State<ComparisonTab> {
                 _buildHeader(),
                 const Divider(color: Colors.white10, height: 30),
                 Expanded(
-                  child: !_isInitialized
-                      ? const Center(child: Text("加载中...", style: TextStyle(color: Colors.white10)))
-                      : Stack(
-                          children: [
-                            StreamBuilder<List<ChatMessage>>(
-                              key: ValueKey(_currentChannelName), 
-                              stream: _isarMessageStream,
-                              builder: (context, snapshot) {
-                                final messages = snapshot.data ?? [];
-                                return ScrollablePositionedList.builder(
-                                  itemScrollController: _itemScrollController,
-                                  itemPositionsListener: _itemPositionsListener,
-                                  padding: const EdgeInsets.only(bottom: 20),
-                                  itemCount: messages.length,
-                                  itemBuilder: (context, index) => _buildChatBubble(
-                                    messages[index], 
-                                    messages[index].userId == _userId,
-                                    () => _jumpToMessage(messages, messages[index].replyToData),
-                                  ),
-                                );
-                              },
-                            ),
-                            // --- 回到底部气泡 ---
-                            if (_showScrollToBottomBtn)
-                              Positioned(
-                                bottom: 10,
-                                right: 0,
-                                left: 0,
-                                child: Center(
-                                  child: GestureDetector(
-                                    onTap: () => _scrollToBottom(),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: widget.accentColor,
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))
-                                        ],
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: const [
-                                          Icon(Icons.arrow_downward, size: 14, color: Colors.black),
-                                          SizedBox(width: 4),
-                                          Text("回到底部", style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                  child: !_isInitialized 
+                    ? const Center(child: Text("加载中...", style: TextStyle(color: Colors.white10))) 
+                    : StreamBuilder<List<ChatMessage>>(
+                        key: ValueKey(_currentChannelName),
+                        stream: _isarMessageStream,
+                        builder: (context, snapshot) {
+                          final messages = snapshot.data ?? [];
+                          return ScrollablePositionedList.builder(
+                            itemScrollController: _itemScrollController,
+                            itemPositionsListener: _itemPositionsListener,
+                            padding: const EdgeInsets.only(bottom: 20),
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = messages[index];
+                              return _buildChatBubble(
+                                msg,
+                                msg.userId == _userId,
+                                () => _jumpToMessage(messages, msg.replyToData),
+                              );
+                            },
+                          );
+                        },
+                      ),
                 ),
                 if (_replyingTo != null) _buildReplyPreview(),
                 const SizedBox(height: 10),
@@ -672,6 +705,51 @@ class ComparisonTabState extends State<ComparisonTab> {
               ],
             ),
           ),
+          if (_showScrollToBottomBtn)
+            Positioned(
+              bottom: (_replyingTo != null ? 140 : 90),
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () => _scrollToBottom(),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _hasNewMessage ? Colors.redAccent : widget.accentColor,
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _hasNewMessage ? Icons.mark_chat_unread_rounded : Icons.arrow_downward, 
+                          size: 18, 
+                          color: _hasNewMessage ? Colors.white : Colors.black
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _hasNewMessage ? "有新消息" : "回到最新位置",
+                          style: TextStyle(
+                            color: _hasNewMessage ? Colors.white : Colors.black, 
+                            fontSize: 13, 
+                            fontWeight: FontWeight.bold
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_isDragging) _buildDragOverlay(),
         ],
       ),
@@ -868,9 +946,24 @@ class ComparisonTabState extends State<ComparisonTab> {
 
   void _scrollToBottom({int? count}) {
     if (!_itemScrollController.isAttached) return;
-    int totalCount = count ?? widget.isar.chatMessages.filter().channelNameEqualTo(_currentChannelName).countSync();
-    if (totalCount == 0) return;
-    _itemScrollController.scrollTo(index: totalCount - 1, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    
+    final targetIndex = (count ?? widget.isar.chatMessages
+        .filter()
+        .channelNameEqualTo(_currentChannelName)
+        .countSync()) - 1;
+
+    if (targetIndex < 0) return;
+
+    _itemScrollController.scrollTo(
+      index: targetIndex,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+    
+    setState(() {
+      _hasNewMessage = false;
+      _isAtBottom = true; 
+    });
   }
 
   void _clearReplyState() => setState(() => _replyingTo = null);

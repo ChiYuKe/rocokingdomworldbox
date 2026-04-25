@@ -64,19 +64,13 @@ class ComparisonTabState extends State<ComparisonTab> {
   bool _isInitialized = false;
 
   bool _isManualJumping = false;
-  bool _showScrollToBottomBtn = false; 
-  bool _hasNewMessage = false; // 新增：是否有未读新消息提醒
+
+  // --- 新增：用于显示“回到底部”气泡的状态 ---
+  bool _showScrollToBottomBtn = false;
 
   final Map<String, ValueNotifier<double?>> _downloadProgressMap = {};
 
-  bool _currentChannelAllowAll = false;
-  List<String> _currentChannelAllowedIds = [];
-
-  bool get _canSendFile {
-    if (_userId == DEVELOPER_ID) return true; 
-    if (_currentChannelAllowAll) return true; 
-    return _currentChannelAllowedIds.contains(_userId); 
-  }
+  bool get _canSendFile => true; //=> _userId == DEVELOPER_ID;
 
   final List<IconData> _avatars = [
     Icons.auto_awesome,
@@ -88,50 +82,42 @@ class ComparisonTabState extends State<ComparisonTab> {
   ];
 
   Stream<List<ChatMessage>>? _isarMessageStream;
+
+  // 记录当前频道被清空的时间点
   DateTime? _lastClearTime;
 
   @override
   void initState() {
     super.initState();
     initialize();
-    _setupScrollListener();
+    
+    // 监听滚动位置，判断是否需要显示气泡
+    _itemPositionsListener.itemPositions.addListener(_scrollListener);
   }
 
-  // 监听滚动位置
-  void _setupScrollListener() {
-    _itemPositionsListener.itemPositions.addListener(() {
-      final positions = _itemPositionsListener.itemPositions.value;
-      if (positions.isEmpty) return;
+  // 滚动监听逻辑
+  void _scrollListener() {
+    if (_itemPositionsListener.itemPositions.value.isEmpty) return;
 
-      final lastIndex = positions
-          .where((p) => p.itemTrailingEdge > 0)
-          .map((p) => p.index)
-          .reduce(max);
+    // 获取当前视图中最后一个条目的索引
+    final lastVisibleIndex = _itemPositionsListener.itemPositions.value
+        .map((item) => item.index)
+        .reduce(max);
 
-      final totalCount = widget.isar.chatMessages
-          .filter()
-          .channelNameEqualTo(_currentChannelName)
-          .countSync();
+    // 获取总消息数
+    final totalCount = widget.isar.chatMessages
+        .filter()
+        .channelNameEqualTo(_currentChannelName)
+        .countSync();
 
-      bool isAtBottom = lastIndex >= totalCount - 1;
+    // 如果距离底部超过一定距离（例如最后一条消息不在视野内），则显示气泡
+    final shouldShow = lastVisibleIndex < totalCount - 1;
 
-      // 如果回到了底部，重置所有气泡状态
-      if (isAtBottom) {
-        if (_showScrollToBottomBtn || _hasNewMessage) {
-          setState(() {
-            _showScrollToBottomBtn = false;
-            _hasNewMessage = false;
-          });
-        }
-      } else {
-        // 如果不在底部，根据当前是否已经在显示来决定是否 setState
-        if (!_showScrollToBottomBtn) {
-          setState(() {
-            _showScrollToBottomBtn = true;
-          });
-        }
-      }
-    });
+    if (shouldShow != _showScrollToBottomBtn) {
+      setState(() {
+        _showScrollToBottomBtn = shouldShow;
+      });
+    }
   }
 
   Future<void> _preparePaths() async {
@@ -185,12 +171,14 @@ class ComparisonTabState extends State<ComparisonTab> {
     await _preparePaths();
     
     final machineId = await _getUniqueId();
+    
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
 
     final savedUsername = prefs.getString('username') ?? "";
     final savedAvatarIndex = prefs.getInt('avatarIndex') ?? 0;
     
+    // 加载当前频道的清空记录
     final clearTimeStr = prefs.getString('clear_time_$_currentChannelName');
     if (clearTimeStr != null) {
       _lastClearTime = DateTime.tryParse(clearTimeStr);
@@ -212,34 +200,8 @@ class ComparisonTabState extends State<ComparisonTab> {
     });
 
     _updateMessageStream();
-    _fetchChannelConfig(); 
     _startSyncing();
     _setupPresence();
-  }
-
-  Future<void> _fetchChannelConfig() async {
-    if (_activeClient == null) return;
-    try {
-      final data = await _activeClient!
-          .from('channel_configs')
-          .select('allow_all_files, allowed_machine_ids')
-          .eq('channel_name', _currentChannelName)
-          .maybeSingle();
-
-      if (data != null) {
-        setState(() {
-          _currentChannelAllowAll = data['allow_all_files'] ?? false;
-          _currentChannelAllowedIds = List<String>.from(data['allowed_machine_ids'] ?? []);
-        });
-      } else {
-        setState(() {
-          _currentChannelAllowAll = false;
-          _currentChannelAllowedIds = [];
-        });
-      }
-    } catch (e) {
-      debugPrint("获取权限配置发生错误: $e");
-    }
   }
 
   void _updateMessageStream() {
@@ -254,6 +216,7 @@ class ComparisonTabState extends State<ComparisonTab> {
 
   @override
   void dispose() {
+    _itemPositionsListener.itemPositions.removeListener(_scrollListener);
     _supabaseSubscription?.cancel();
     if (_presenceChannel != null) _activeClient?.removeChannel(_presenceChannel!);
     _textController.dispose();
@@ -262,6 +225,7 @@ class ComparisonTabState extends State<ComparisonTab> {
     super.dispose();
   }
 
+  // --- 修改后的清空聊天记录逻辑（包含缓存清理） ---
   Future<void> _clearChatHistory() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -282,8 +246,11 @@ class ComparisonTabState extends State<ComparisonTab> {
     if (confirm == true) {
       final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
+      
+      // 1. 记录逻辑清空时间点
       await prefs.setString('clear_time_$_currentChannelName', now.toIso8601String());
       
+      // 2. 删除本地数据库记录
       await widget.isar.writeTxn(() async {
         await widget.isar.chatMessages
             .filter()
@@ -291,15 +258,17 @@ class ComparisonTabState extends State<ComparisonTab> {
             .deleteAll();
       });
 
+      // 3. 清理 RocoKingdomCache 目录下的物理缓存文件
       try {
         await customCacheManager.emptyCache();
       } catch (e) {
         debugPrint("清理缓存文件失败: $e");
       }
 
+      // 4. 重置内存状态
       setState(() {
         _lastClearTime = now;
-        _downloadProgressMap.clear();
+        _downloadProgressMap.clear(); // 清空下载状态
       });
 
       _showSuccessSnackBar("记录与缓存已彻底清空");
@@ -404,20 +373,13 @@ class ComparisonTabState extends State<ComparisonTab> {
       _lastClearTime = clearTimeStr != null ? DateTime.tryParse(clearTimeStr) : null;
       _onlineCount = 0;
       _isarMessageStream = null;
-      _currentChannelAllowAll = false;
-      _currentChannelAllowedIds = [];
-      _hasNewMessage = false;
-      _showScrollToBottomBtn = false;
-      
       if (url != null && key != null) {
         _activeClient = SupabaseClient(url, key);
       } else {
         _activeClient = Supabase.instance.client;
       }
     });
-
     _updateMessageStream();
-    _fetchChannelConfig(); 
     _startSyncing();
     _setupPresence();
   }
@@ -435,7 +397,10 @@ class ComparisonTabState extends State<ComparisonTab> {
       await widget.isar.writeTxn(() async {
         for (var map in data) {
           final createdAt = DateTime.parse(map['created_at']).toLocal();
-          if (_lastClearTime != null && createdAt.isBefore(_lastClearTime!)) continue;
+          
+          if (_lastClearTime != null && createdAt.isBefore(_lastClearTime!)) {
+            continue;
+          }
 
           final remoteId = map['id'].toString();
           final String combinedKey = "${remoteId}_$syncContextChannel";
@@ -452,11 +417,6 @@ class ComparisonTabState extends State<ComparisonTab> {
             ..replyToData = map['reply_to'] != null ? jsonEncode(map['reply_to']) : null
             ..status = 0;
           await widget.isar.chatMessages.put(msg);
-
-          // 核心逻辑：如果是别人发的消息，且我不在底部，则标记有未读新消息
-          if (msg.userId != _userId && _showScrollToBottomBtn) {
-            if (mounted) setState(() => _hasNewMessage = true);
-          }
         }
       });
     });
@@ -477,17 +437,23 @@ class ComparisonTabState extends State<ComparisonTab> {
   }
 
   void _deleteChannel(String name) async {
-    setState(() => _customChannels.removeWhere((element) => element['name'] == name));
+    setState(() {
+      _customChannels.removeWhere((element) => element['name'] == name);
+    });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('custom_channels', jsonEncode(_customChannels));
-    if (_currentChannelName == name) _switchChannel("基础频道");
+    if (_currentChannelName == name) {
+      _switchChannel("基础频道");
+    }
   }
 
   Future<void> _sendMessage() async {
     final text = _textController.text.trim();
     if (text.isEmpty || _activeClient == null) return;
-    if (_username.isEmpty) { _showProfileDialog(isFirstTime: true); return; }
-    
+    if (_username.isEmpty) {
+      _showProfileDialog(isFirstTime: true);
+      return;
+    }
     final tempReply = _replyingTo;
     _textController.clear();
     _clearReplyState();
@@ -508,7 +474,6 @@ class ComparisonTabState extends State<ComparisonTab> {
         'pet_id': _avatarIndex,
         'is_image': false,
         'reply_to': tempReply,
-        'channel_name': _currentChannelName,
       }).select().single();
 
       final String realRemoteId = response['id'].toString();
@@ -520,6 +485,7 @@ class ComparisonTabState extends State<ComparisonTab> {
         await widget.isar.chatMessages.put(localMsg);
       });
     } catch (e) {
+      debugPrint("消息发送失败: $e");
       await widget.isar.writeTxn(() async {
         localMsg.status = 2; 
         await widget.isar.chatMessages.put(localMsg);
@@ -528,12 +494,11 @@ class ComparisonTabState extends State<ComparisonTab> {
   }
 
   Future<void> _uploadAndSendFile(File file) async {
-    if (_activeClient == null || !_canSendFile) {
-      _showErrorSnackBar("您没有权限在该频道发送文件");
+    if (_activeClient == null || !_canSendFile) return;
+    if (_username.isEmpty) {
+      _showProfileDialog(isFirstTime: true);
       return;
     }
-    if (_username.isEmpty) { _showProfileDialog(isFirstTime: true); return; }
-    
     final ext = p.extension(file.path).toLowerCase();
     final isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp'].contains(ext);
     
@@ -558,7 +523,6 @@ class ComparisonTabState extends State<ComparisonTab> {
         'pet_id': _avatarIndex,
         'is_image': isImage,
         'reply_to': _replyingTo,
-        'channel_name': _currentChannelName,
       }).select().single();
 
       final String realRemoteId = response['id'].toString();
@@ -649,33 +613,57 @@ class ComparisonTabState extends State<ComparisonTab> {
                 Expanded(
                   child: !_isInitialized
                       ? const Center(child: Text("加载中...", style: TextStyle(color: Colors.white10)))
-                      : StreamBuilder<List<ChatMessage>>(
-                          key: ValueKey(_currentChannelName), 
-                          stream: _isarMessageStream,
-                          builder: (context, snapshot) {
-                            final messages = snapshot.data ?? [];
-
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (messages.isNotEmpty) {
-                                // 自动追随逻辑：如果是手动发送，或者没有未读新消息（代表用户在最底部）
-                                if (_isManualJumping || (!_hasNewMessage && !_showScrollToBottomBtn)) {
-                                  _scrollToBottom(count: messages.length);
-                                }
-                              }
-                            });
-
-                            return ScrollablePositionedList.builder(
-                              itemScrollController: _itemScrollController,
-                              itemPositionsListener: _itemPositionsListener,
-                              padding: const EdgeInsets.only(bottom: 20),
-                              itemCount: messages.length,
-                              itemBuilder: (context, index) => _buildChatBubble(
-                                messages[index], 
-                                messages[index].userId == _userId,
-                                () => _jumpToMessage(messages, messages[index].replyToData),
+                      : Stack(
+                          children: [
+                            StreamBuilder<List<ChatMessage>>(
+                              key: ValueKey(_currentChannelName), 
+                              stream: _isarMessageStream,
+                              builder: (context, snapshot) {
+                                final messages = snapshot.data ?? [];
+                                return ScrollablePositionedList.builder(
+                                  itemScrollController: _itemScrollController,
+                                  itemPositionsListener: _itemPositionsListener,
+                                  padding: const EdgeInsets.only(bottom: 20),
+                                  itemCount: messages.length,
+                                  itemBuilder: (context, index) => _buildChatBubble(
+                                    messages[index], 
+                                    messages[index].userId == _userId,
+                                    () => _jumpToMessage(messages, messages[index].replyToData),
+                                  ),
+                                );
+                              },
+                            ),
+                            // --- 回到底部气泡 ---
+                            if (_showScrollToBottomBtn)
+                              Positioned(
+                                bottom: 10,
+                                right: 0,
+                                left: 0,
+                                child: Center(
+                                  child: GestureDetector(
+                                    onTap: () => _scrollToBottom(),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: widget.accentColor,
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))
+                                        ],
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: const [
+                                          Icon(Icons.arrow_downward, size: 14, color: Colors.black),
+                                          SizedBox(width: 4),
+                                          Text("回到底部", style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            );
-                          },
+                          ],
                         ),
                 ),
                 if (_replyingTo != null) _buildReplyPreview(),
@@ -684,43 +672,6 @@ class ComparisonTabState extends State<ComparisonTab> {
               ],
             ),
           ),
-          
-          // 悬浮气泡 UI
-          if (_showScrollToBottomBtn)
-            Positioned(
-              bottom: (_replyingTo != null ? 140 : 90), 
-              left: 0,
-              right: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _hasNewMessage = false;
-                    });
-                    _scrollToBottom();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _hasNewMessage ? Colors.redAccent : widget.accentColor, // 有新消息变红
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4))],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(_hasNewMessage ? Icons.message_rounded : Icons.arrow_downward_rounded, 
-                             size: 16, color: _hasNewMessage ? Colors.white : Colors.black),
-                        const SizedBox(width: 6),
-                        Text(_hasNewMessage ? "有新消息" : "回到底部", 
-                             style: TextStyle(color: _hasNewMessage ? Colors.white : Colors.black, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'MIANFEIZITI')),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
           if (_isDragging) _buildDragOverlay(),
         ],
       ),

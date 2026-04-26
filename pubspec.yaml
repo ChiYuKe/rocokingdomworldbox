@@ -46,6 +46,18 @@ dependencies:
 
   window_manager: ^0.4.3 # 用于管理窗口大小和位置
 
+  supabase_flutter: ^2.0.0 # 用于与 Supabase 后端交互
+  image_picker: ^1.0.7 # 用于选择图片
+  path: ^1.9.0 # 用于处理文件路径
+  intl: ^0.19.0 # 用于国际化和日期格式化
+  desktop_drop: ^0.4.4 # 用于实现拖放功能
+  file_picker: ^8.1.2 # 用于选择文件
+  url_launcher: ^6.3.0  # 用于点击下载/打开链接
+
+  flutter_cache_manager: ^3.4.1 # 用于缓存网络资源
+  scrollable_positioned_list: ^0.3.8 # 用于实现可滚动的列表，支持滚动到指定位置
+  device_info_plus: ^10.1.0 # 用于获取设备信息
+
 
 
 
@@ -75,14 +87,11 @@ flutter:
   uses-material-design: true
 
   assets:
-  - assets/avatars/
-  - assets/ef/
-  - assets/portraits/
-  - assets/abilitys/
   - assets/ui/
   - assets/ui/types/
   - assets/data/pokedex.json
   - assets/data/abilities.json
+  - assets/data/
   - .env
 
   - assets/Icon/BigHeadIcon256/
@@ -92,6 +101,7 @@ flutter:
   - assets/Icon/Pet256/
   - assets/Icon/Pet1024/
   - assets/Icon/SkillBase/
+  - assets/Icon/FeatureIcon/
 
 
 

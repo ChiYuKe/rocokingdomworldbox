@@ -30,6 +30,39 @@ enum PetType {
 }
 // 如果改了数据模型，记得在终端执行 dart run build_runner build --delete-conflicting-outputs 来更新生成的代码
 
+
+
+
+
+
+/// 
+///    等级技能 LEVEL_SKILL_CONF.json    纹理  SKILL_CONF.json
+/// "pet_evolution_id": [ 4 ],  对应  PET_EVOLUTION_CONF.json
+///
+/// "pet_feature": 200076,  "pet_chaos_feature": 200076,   "pet_glass_feature": 200076,  对应  SKILL_CONF.json
+///
+///
+/// "pet_egg": 对应 BAG_ITEM_CONF.json
+///
+///
+///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // 定义 Ability 数据模型
 @collection
 class Ability {

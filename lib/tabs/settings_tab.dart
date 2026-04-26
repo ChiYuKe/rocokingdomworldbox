@@ -1,27 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../models/pet.dart';
+import '../models/settingsprovider.dart';
 
 class SettingsTab extends StatefulWidget {
   final Color accentColor;
-  
-  //接收父组件的状态
-  final bool isColorLocked;
-  final PetType selectedType;
-  final double colorIntensity;
-  final ValueChanged<bool> onLockChanged;
-  final ValueChanged<PetType> onTypeChanged;
-  final ValueChanged<double> onIntensityChanged;
+  final SettingsProvider settings; // 接收 Provider
 
   const SettingsTab({
     super.key, 
     required this.accentColor,
-    required this.isColorLocked,
-    required this.selectedType,
-    required this.colorIntensity,
-    required this.onLockChanged,
-    required this.onTypeChanged,
-    required this.onIntensityChanged,
+    required this.settings,
   });
 
   @override
@@ -30,14 +21,41 @@ class SettingsTab extends StatefulWidget {
 
 class _SettingsTabState extends State<SettingsTab> {
   int _activeCategory = 0;
-  
-  // 常规设置状态
-  bool _hdPortrait = true;
-  double _uiScale = 1.0;
-
-  // 音效设置状态
   bool _masterSound = true;
   double _bgmVolume = 0.5;
+
+  // 恢复默认设置
+  Future<void> _resetToDefault() async {
+    final s = widget.settings;
+    s.resetSettings();
+
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("已恢复默认配置"), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  Future<void> _clearAllCache() async {
+    try {
+      await CacheManager(Config('RocoKingdomCache')).emptyCache();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("所有缓存与配置已清空，请重启应用"), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("清理失败: $e"), behavior: SnackBarBehavior.floating),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,93 +127,164 @@ class _SettingsTabState extends State<SettingsTab> {
     }
   }
 
-  //常规设置面板
-  Widget _buildGeneralSettings() => Padding(
-    key: const ValueKey(0),
-    padding: const EdgeInsets.all(40),
-    child: SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader("显示选项"),
-          _buildSwitchTile("高清立绘加载", "开启后将展示精细度更高的精灵原画(真的假的？)", _hdPortrait, (v) => setState(() => _hdPortrait = v)),
-          const SizedBox(height: 30),
-          _buildSliderTile("不知道干嘛的", _uiScale, 0.5, 1.5, (v) => setState(() => _uiScale = v)),
-          
-          const Divider(color: Colors.white10, height: 60),
-          
-          _buildSectionHeader("个性化配色"),
-          // 使用父组件传进来的 widget.isColorLocked 和 widget.onLockChanged
-          _buildSwitchTile(
-            "锁定当前色系", 
-            "锁定后背景颜色将不再随精灵选中而变化", 
-            widget.isColorLocked, 
-            widget.onLockChanged
-          ),
-          const SizedBox(height: 24),
-          Opacity(
-            opacity: widget.isColorLocked ? 1.0 : 0.4,
-            child: IgnorePointer(
-              ignoring: !widget.isColorLocked,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("手动指定色系", style: TextStyle(color: Colors.white, fontSize: 18)),
-                      Text("需开启上方锁定开关后生效", style: TextStyle(color: Colors.white38, fontSize: 12)),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white10),
+  Widget _buildGeneralSettings() {
+    final s = widget.settings; 
+    
+    return Padding(
+      key: const ValueKey(0),
+      padding: const EdgeInsets.all(40),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader("显示选项"),
+            _buildSwitchTile("高清立绘加载", "开启后将展示精细度更高的精灵原画", s.hdPortrait, (v) => s.setHdPortrait(v)),
+            
+            const Divider(color: Colors.white10, height: 60),
+            
+            _buildSectionHeader("个性化配色"),
+            _buildSwitchTile(
+              "锁定当前色系", 
+              "锁定后背景颜色将不再随精灵选中而变化", 
+              s.isColorLocked, 
+              (v) => s.setColorLocked(v) 
+            ),
+            const SizedBox(height: 24),
+            Opacity(
+              opacity: s.isColorLocked ? 1.0 : 0.4,
+              child: IgnorePointer(
+                ignoring: !s.isColorLocked,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("手动指定色系", style: TextStyle(color: Colors.white, fontSize: 18)),
+                        Text("需开启上方锁定开关后生效", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
                     ),
-                    child: DropdownButton<PetType>(
-                      value: widget.selectedType, // 使用父组件传进来的值
-                      dropdownColor: const Color(0xFF2D2D2D),
-                      underline: const SizedBox(),
-                      icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                      items: PetType.values.map((PetType type) {
-                        return DropdownMenuItem<PetType>(
-                          value: type,
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 12, height: 12,
-                                decoration: BoxDecoration(color: type.themeColor, shape: BoxShape.circle),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(type.label, style: const TextStyle(color: Colors.white)),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (PetType? newValue) {
-                        if (newValue != null) widget.onTypeChanged(newValue);
-                      },
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: DropdownButton<PetType>(
+                        value: s.selectedType,
+                        dropdownColor: const Color(0xFF2D2D2D),
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                        items: PetType.values.map((PetType type) {
+                          return DropdownMenuItem<PetType>(
+                            value: type,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 12, height: 12,
+                                  decoration: BoxDecoration(color: type.themeColor, shape: BoxShape.circle),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(type.label, style: const TextStyle(color: Colors.white)),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (PetType? newValue) {
+                          if (newValue != null) s.setSelectedType(newValue);
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          _buildSliderTile(
-              "背景色彩强度", 
-              widget.colorIntensity, 
-              0.0, 1, 
-              widget.onIntensityChanged
+            const SizedBox(height: 24),
+            _buildSliderTile(
+                "背景色彩强度", 
+                s.colorIntensity, 
+                0.0, 1, 
+                (v) => s.setColorIntensity(v)
+              ),
+
+            const Divider(color: Colors.white10, height: 60),
+
+            _buildSectionHeader("存储与重置"),
+            // 恢复默认按钮
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("恢复默认设置", style: TextStyle(color: Colors.white, fontSize: 18)),
+                    Text("将所有开关、配色和调节项还原至初始状态", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
+                OutlinedButton.icon(
+                  onPressed: _resetToDefault,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  label: const Text("恢复默认"),
+                ),
+              ],
             ),
-
-        ],
+            const SizedBox(height: 30),
+            // 清理缓存按钮
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("清理所有缓存", style: TextStyle(color: Colors.white, fontSize: 18)),
+                    Text("包括图片缓存、本地消息记录及个人配置信息", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        backgroundColor: const Color(0xFF2D2D2D),
+                        title: const Text("确认清理？", style: TextStyle(color: Colors.white)),
+                        content: const Text("这将删除所有本地存储的数据且不可恢复。", style: TextStyle(color: Colors.white70)),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context), child: const Text("取消")),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _clearAllCache();
+                            },
+                            child: const Text("确定清理", style: TextStyle(color: Colors.redAccent)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent.withOpacity(0.1),
+                    foregroundColor: Colors.redAccent,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    side: const BorderSide(color: Colors.redAccent, width: 0.5),
+                  ),
+                  icon: const Icon(Icons.delete_sweep_rounded, size: 20),
+                  label: const Text("立即清理"),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-
+    );
+  }
 
   Widget _buildAudioSettings() => Padding(
     key: const ValueKey(1),
@@ -226,11 +315,7 @@ class _SettingsTabState extends State<SettingsTab> {
         const Text("洛克王国盒子", style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
         const Text("Version 0.0.0 (beta version)", style: TextStyle(color: Colors.white38, fontSize: 14)),
         const SizedBox(height: 30),
-        const Text(
-          "ChiYuKe的个人UI练习", 
-          textAlign: TextAlign.center, 
-          style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.5)
-        ),
+        const Text("ChiYuKe的个人UI练习", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.5)),
         const Spacer(),
         const Text("© 2026 Roco Kingdom World.", style: TextStyle(color: Colors.white10, fontSize: 12)),
       ],

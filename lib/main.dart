@@ -3,14 +3,16 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 import 'models/pet.dart';
+import 'models/chat_message.dart';
 import 'tabs/pokedex_tab.dart';
 import 'tabs/settings_tab.dart';
-import 'tabs/comparison_tab.dart';
+import 'tabs/hub_tab.dart';
 import 'tabs/plugins_tab.dart';
 import 'models/plugin_interface.dart';
 import 'plugins/calc_plugin/main.dart' as calc;
@@ -23,9 +25,10 @@ Future<void> main() async {
 
   // 配置桌面端原生窗口属性
   await windowManager.ensureInitialized();
+
   WindowOptions windowOptions = const WindowOptions(
-    size: Size(1200, 800),
-    minimumSize: Size(1000, 600),
+    size: Size(1280, 720),
+    minimumSize: Size(1280, 720),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
@@ -45,7 +48,12 @@ Future<void> main() async {
     debugPrint("Env Load Error: $e");
   }
 
-  runApp(const RocoPokedexApp());
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL'] ?? "default_url",
+    anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? "default_anon_key", 
+  );
+
+  runApp(const RocoPokedexApp()); 
 }
 
 /// 应用程序根组件：定义全局样式主题
@@ -80,6 +88,9 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   List<Pet> _pokedex = [];
   List<RocoPlugin> _plugins = [];
   bool _isLoading = true;
+
+    // 聊天室页面状态管理
+  final GlobalKey<HubTabState> _chatTabKey = GlobalKey<HubTabState>();
 
   // 交互状态控制
   int _currentTab = 0;
@@ -119,10 +130,16 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   /// 异步初始化数据库并加载资源文件
   Future<void> _initApp() async {
     final dir = await getApplicationDocumentsDirectory();
-    _isar = await Isar.open([PetSchema, AbilitySchema], directory: dir.path);
+    _isar = await Isar.open(
+      [PetSchema, AbilitySchema, ChatMessageSchema], directory: dir.path);
 
-    await _isar.writeTxn(() async {
+    // 1. 检查是否已经初始化过数据，避免重复加载
+    final petCount = await _isar.pets.count();
+    
+    if (petCount == 0) {
+      debugPrint("首次启动，开始初始化基础数据...");
       try {
+        // 2. 将耗时的 JSON 解析放在事务外部
         final String abiRes = await rootBundle.loadString('assets/data/abilities.json');
         final List<dynamic> abiData = json.decode(abiRes)['data'];
         final abilities = abiData.map((item) => Ability()
@@ -130,17 +147,24 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           ..name = item['name']
           ..description = item['description']
           ..image = item['image']).toList();
-        await _isar.abilitys.putAll(abilities);
 
         final String jsonString = await rootBundle.loadString('assets/data/pokedex.json');
         final List<dynamic> petData = json.decode(jsonString)['data'];
         final List<Pet> newPets = petData.map((item) => Pet.fromJson(item)).toList();
-        await _isar.pets.putAll(newPets);
+
+        // 3. 仅在写入时开启事务，缩短阻塞时间
+        await _isar.writeTxn(() async {
+          await _isar.abilitys.putAll(abilities);
+          await _isar.pets.putAll(newPets);
+        });
       } catch (e) {
         debugPrint("Data Init Error: $e");
       }
-    });
+    } else {
+      debugPrint("数据已存在，跳过初始化步骤");
+    }
 
+    // 4. 获取数据并更新 UI
     final allPets = await _isar.pets.where().findAll();
     if (mounted) {
       setState(() {
@@ -154,6 +178,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
       });
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -174,6 +199,8 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
       currentEffectiveColor,
       _colorIntensity,
     )!;
+
+
 
     return Scaffold(
       body: Stack(
@@ -264,7 +291,12 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           onSelected: (index) => setState(() => _selectedIndex = index),
           accentColor: accentColor,
         ),
-        ComparisonTab(pokedex: _pokedex, accentColor: accentColor),
+
+        HubTab(
+          key: _chatTabKey, 
+          accentColor: accentColor
+          ,isar: _isar, // 传入 Isar 实例以供 HubTab 使用
+        ),
         PluginsTab(plugins: _plugins, accentColor: accentColor),
         SettingsTab(
           accentColor: accentColor,
@@ -311,7 +343,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
         children: [
           _buildNavBtn(0, Icons.auto_awesome_motion_rounded, "图鉴", accentColor),
           const SizedBox(height: 12),
-          _buildNavBtn(1, Icons.compare_arrows_rounded, "克制", accentColor),
+          _buildNavBtn(1, Icons.compare_arrows_rounded, "聊天室", accentColor),
           const SizedBox(height: 12),
           _buildNavBtn(2, Icons.extension_rounded, "插件", accentColor),
           const SizedBox(height: 12),
@@ -325,7 +357,15 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   Widget _buildNavBtn(int index, IconData icon, String label, Color accentColor) {
     final bool isSelected = _currentTab == index;
     return GestureDetector(
-      onTap: () => setState(() => _currentTab = index),
+      onTap: () { setState(() => _currentTab = index);
+      if (index == 1) {
+        _chatTabKey.currentState?.initialize(); // 确保 ComparisonTab 的状态被正确调用
+      }
+      
+      
+      
+      },
+      
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -375,6 +415,8 @@ class WindowBtn extends StatefulWidget {
   State<WindowBtn> createState() => _WindowBtnState();
 }
 
+
+// 窗口按钮状态：管理悬停状态并更新UI反馈
 class _WindowBtnState extends State<WindowBtn> {
   bool _isHovered = false;
 

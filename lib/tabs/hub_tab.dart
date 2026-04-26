@@ -765,7 +765,6 @@ class HubTabState extends State<HubTab> {
     );
   }
 
-
   Widget _buildHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -884,7 +883,6 @@ class HubTabState extends State<HubTab> {
       ],
     );
   }
-
 
   void _showChannelPicker() {
     showModalBottomSheet(
@@ -1092,7 +1090,7 @@ class HubTabState extends State<HubTab> {
     );
   }
 
-Widget _buildChatBubble(ChatMessage msg, bool isMe, VoidCallback onReplyTap) {
+  Widget _buildChatBubble(ChatMessage msg, bool isMe, VoidCallback onReplyTap) {
     int avatarIdx = msg.petId ?? 0;
     IconData avatarIcon = (avatarIdx < _avatars.length) ? _avatars[avatarIdx] : Icons.person;
     bool isImage = msg.isImage;
@@ -1206,7 +1204,7 @@ Widget _buildChatBubble(ChatMessage msg, bool isMe, VoidCallback onReplyTap) {
     );
   }
 
-Widget _buildMessageBody(ChatMessage msg, bool isMe) {
+  Widget _buildMessageBody(ChatMessage msg, bool isMe) {
     final content = msg.content ?? "";
     final isUrl = content.startsWith('http');
     final msgId = msg.remoteId ?? msg.id.toString();

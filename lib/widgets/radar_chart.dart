@@ -60,14 +60,17 @@ class StatRadarChart extends StatelessWidget {
               height: size,
               fit: BoxFit.contain,
             ),
-            // 雷达数据绘制
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.0, end: 1.0),
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.easeOutBack,
-              builder: (context, anim, _) => CustomPaint(
+            // 雷达数据绘制 - 使用自定义的 ListDoubleTween
+            TweenAnimationBuilder<List<double>>(
+              tween: ListDoubleTween(
+                begin: List.filled(6, 0.0), 
+                end: mappedData
+              ),
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeOutQuart,
+              builder: (context, animatedStats, _) => CustomPaint(
                 size: Size(size, size),
-                painter: RadarChartPainter(mappedData, anim, color, dataRadius),
+                painter: RadarChartPainter(animatedStats, color, dataRadius),
               ),
             ),
             // 顶点图标
@@ -88,13 +91,32 @@ class StatRadarChart extends StatelessWidget {
           'assets/ui/${_iconNames[i]}.png',
           width: iconSize,
           height: iconSize,
-          errorBuilder: (context, _, __) => Icon(Icons.help_outline, size: iconSize * 0.8, color: Colors.white24),
+          errorBuilder: (context, _, __) => Icon(
+            Icons.help_outline, 
+            size: iconSize * 0.8, 
+            color: Colors.white24
+          ),
         ),
       );
     });
   }
+}
 
+/// 自定义 Tween 用于处理 List<double> 的平滑过渡
+class ListDoubleTween extends Tween<List<double>> {
+  ListDoubleTween({super.begin, super.end});
 
+  @override
+  List<double> lerp(double t) {
+    final start = begin ?? [];
+    final finish = end ?? [];
+    if (start.length != finish.length) return finish;
+
+    return List.generate(start.length, (i) {
+      // 对列表中的每个数值进行线性插值计算
+      return start[i] + (finish[i] - start[i]) * t;
+    });
+  }
 }
 
 class _PositionedComponent extends StatelessWidget {
@@ -119,13 +141,12 @@ class _PositionedComponent extends StatelessWidget {
 
 class RadarChartPainter extends CustomPainter {
   final List<double> stats;
-  final double animationValue;
   final Color color;
   final double baseRadius;
 
   static const int _maxStat = 250;
 
-  RadarChartPainter(this.stats, this.animationValue, this.color, this.baseRadius);
+  RadarChartPainter(this.stats, this.color, this.baseRadius);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -140,7 +161,7 @@ class RadarChartPainter extends CustomPainter {
     for (int j = 0; j < sides; j++) {
       final double angle = j * angleStep - math.pi / 2;
       final double normalizedStat = (stats[j] / _maxStat).clamp(0.0, 1.0);
-      final double currentRadius = baseRadius * normalizedStat * animationValue;
+      final double currentRadius = baseRadius * normalizedStat;
 
       final double x = center.dx + currentRadius * math.cos(angle);
       final double y = center.dy + currentRadius * math.sin(angle);
@@ -166,14 +187,23 @@ class RadarChartPainter extends CustomPainter {
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
+        ..strokeWidth = 2.0
         ..strokeJoin = StrokeJoin.round,
     );
 
+    // final pointPaint = Paint()..color = Colors.white;
+    // final pointStrokePaint = Paint()
+    //   ..color = color
+    //   ..style = PaintingStyle.stroke
+    //   ..strokeWidth = 1.5;
 
+    // for (var point in points) {
+    //   canvas.drawCircle(point, 3.0, pointPaint);
+    //   canvas.drawCircle(point, 3.0, pointStrokePaint);
+    // }
   }
 
   @override
   bool shouldRepaint(RadarChartPainter old) => 
-      old.animationValue != animationValue || old.stats != stats || old.color != color;
+      old.stats != stats || old.color != color;
 }

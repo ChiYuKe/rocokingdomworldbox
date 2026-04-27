@@ -22,6 +22,7 @@
 ![UI预览](./docs/preview2.png)
 ![UI预览](./docs/preview3.png)
 ![UI预览](./docs/preview4.png)
+![UI预览](./docs/preview5.png)
 
 
 

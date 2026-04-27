@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/pet.dart';
+import '../models/pet_model.dart';
 
 class SettingsProvider with ChangeNotifier {
   late SharedPreferences _prefs;
@@ -25,7 +25,7 @@ class SettingsProvider with ChangeNotifier {
     _hdPortrait = _prefs.getBool('hdPortrait') ?? true;
     
     // 加载 PetType (存储其 index)
-    int typeIndex = _prefs.getInt('selectedTypeIndex') ?? 0;
+    int typeIndex = _prefs.getInt('selectedTypeIndex') ?? 13; // 默认为 cute 类型的 index
     _selectedType = PetType.values[typeIndex];
     
     notifyListeners();

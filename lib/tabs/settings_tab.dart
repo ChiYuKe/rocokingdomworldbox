@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import '../models/pet.dart';
+import '../models/pet_model.dart';
 import '../models/settingsprovider.dart';
 
 class SettingsTab extends StatefulWidget {

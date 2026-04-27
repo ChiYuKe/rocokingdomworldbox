@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 class StatRadarChart extends StatelessWidget {
   /// 外部传入的数据顺序固定为：[生命, 物攻, 魔攻, 物防, 魔防, 速度]
-  final List<double> stats;
+  final List<int> stats;
   final Color color;
   final String backgroundImage = 'assets/ui/UI_PetInfoRadraBg.png';
 
@@ -33,8 +33,8 @@ class StatRadarChart extends StatelessWidget {
 
   /// 根据映射获取转换后的数据列表
   List<double> get _mappedStats {
-    if (stats.length < 6) return stats;
-    return _drawMapping.map((index) => stats[index]).toList();
+    if (stats.length < 6) return stats.map((v) => v.toDouble()).toList();
+    return _drawMapping.map((index) => stats[index].toDouble()).toList();
   }
 
   @override

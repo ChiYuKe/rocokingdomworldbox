@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import '../../../../models/pet.dart';
+import 'package:rocokingdomworldbox/models/pet_model.dart';
+import '../../../models/skill_model.dart';
 
 class ContrastUI extends StatefulWidget {
   final Color accentColor;
-  final List<Pet> pokedex;
+  final List<PetModel> pictorialBookId;
 
-  const ContrastUI({super.key, required this.accentColor, required this.pokedex});
+  const ContrastUI({super.key, required this.accentColor, required this.pictorialBookId});
 
   @override
   State<ContrastUI> createState() => _ContrastUIState();
@@ -17,9 +18,9 @@ class _ContrastUIState extends State<ContrastUI> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.pokedex.isEmpty) return const SizedBox();
-    final a = widget.pokedex[_indexA];
-    final b = widget.pokedex.length > 1 ? widget.pokedex[_indexB] : a;
+    if (widget.pictorialBookId.isEmpty) return const SizedBox();
+    final a = widget.pictorialBookId[_indexA];
+    final b = widget.pictorialBookId.length > 1 ? widget.pictorialBookId[_indexB] : a;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0B),
@@ -43,7 +44,7 @@ class _ContrastUIState extends State<ContrastUI> {
   }
 
   // --- 头部设计：模块化对比 ---
-  Widget _buildSystemHeader(Pet a, Pet b) {
+  Widget _buildSystemHeader(PetModel a, PetModel b) {
     return Container(
       padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 20, bottom: 24),
       decoration: const BoxDecoration(
@@ -64,7 +65,7 @@ class _ContrastUIState extends State<ContrastUI> {
     );
   }
 
-  Widget _buildHeaderSubject(Pet pet, bool isLeft, String id) {
+  Widget _buildHeaderSubject(PetModel pet, bool isLeft, String id) {
     return GestureDetector(
       onTap: () => _showPetSelection(isLeft),
       behavior: HitTestBehavior.opaque,
@@ -181,7 +182,7 @@ class _ContrastUIState extends State<ContrastUI> {
   }
 
   // --- 底部：总和数据分析 ---
-  Widget _buildSummaryFooter(Pet a, Pet b) {
+  Widget _buildSummaryFooter(PetModel a, PetModel b) {
     final sumA = a.stats.reduce((v, e) => v + e).toInt();
     final sumB = b.stats.reduce((v, e) => v + e).toInt();
 
@@ -243,7 +244,7 @@ class _ContrastUIState extends State<ContrastUI> {
         return StatefulBuilder( // 使用 StatefulBuilder 局部刷新搜索结果
           builder: (context, setSheetState) {
             // 过滤逻辑
-            final filteredList = widget.pokedex.where((pet) {
+            final filteredList = widget.pictorialBookId.where((pet) {
               return pet.name.toLowerCase().contains(searchQuery.toLowerCase());
             }).toList();
 
@@ -282,7 +283,7 @@ class _ContrastUIState extends State<ContrastUI> {
                       itemBuilder: (context, i) {
                         final pet = filteredList[i];
                         // 寻找在原始列表中的索引以保持选中状态逻辑
-                        final originalIndex = widget.pokedex.indexOf(pet);
+                        final originalIndex = widget.pictorialBookId.indexOf(pet);
                         final bool isSelected = isA ? _indexA == originalIndex : _indexB == originalIndex;
                         final int totalStats = pet.stats.reduce((v, e) => v + e).toInt();
                         
@@ -299,7 +300,7 @@ class _ContrastUIState extends State<ContrastUI> {
     );
   }
   // 精灵选择面板
-  Widget _buildSelectionTile(Pet pet, int totalStats, bool isSelected, bool isA, int index) {
+  Widget _buildSelectionTile(PetModel pet, int totalStats, bool isSelected, bool isA, int index) {
     return InkWell(
       onTap: () {
         setState(() => isA ? _indexA = index : _indexB = index);

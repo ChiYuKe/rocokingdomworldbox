@@ -7,7 +7,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'models/pet.dart';
+import 'models/skill_model.dart';
 import 'models/chat_message.dart';
 import 'tabs/pokedex_tab.dart';
 import 'tabs/settings_tab.dart';
@@ -18,6 +18,10 @@ import 'plugins/calc_plugin/main.dart' as calc;
 import 'plugins/update_pet_data_plugin/main.dart' as update_pet_data;
 import 'plugins/auto_script_plugin/main.dart' as auto_script;
 import 'models/settingsprovider.dart';
+import 'services/data_sync_service.dart';
+import 'models/pet_model.dart';
+import 'tabs/map_tab.dart';
+import 'models/sync_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +50,10 @@ Future<void> main() async {
   } catch (e) {
     debugPrint("Env Load Error: $e");
   }
+
+
+
+  
 
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL'] ?? "default_url",
@@ -90,7 +98,7 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   late Isar _isar;
-  List<Pet> _pokedex = [];
+  List<PetModel> _pictorialBookId = [];
   List<RocoPlugin> _plugins = [];
   bool _isLoading = true;
   final GlobalKey<HubTabState> _chatTabKey = GlobalKey<HubTabState>();
@@ -124,40 +132,30 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
 
   Future<void> _initApp() async {
     final dir = await getApplicationDocumentsDirectory();
-    _isar = await Isar.open(
-      [PetSchema, AbilitySchema, ChatMessageSchema], directory: dir.path);
-
-    final petCount = await _isar.pets.count();
     
-    if (petCount == 0) {
-      try {
-        final String abiRes = await rootBundle.loadString('assets/data/abilities.json');
-        final List<dynamic> abiData = json.decode(abiRes)['data'];
-        final abilities = abiData.map((item) => Ability()
-          ..aid = item['id']
-          ..name = item['name']
-          ..description = item['description']
-          ..image = item['image']).toList();
+    // 打开数据库 (确保包含所有 Schema)
+    _isar = await Isar.open(
+      [
+        SkillModelSchema, // 宠物技能特性模型
+        ChatMessageSchema, // 聊天消息模型
+        PetModelSchema,  // 宠物模型
+        SyncConfigSchema // 同步配置模型
+      ], 
+      directory: dir.path
+    );
 
-        final String jsonString = await rootBundle.loadString('assets/data/pokedex.json');
-        final List<dynamic> petData = json.decode(jsonString)['data'];
-        final List<Pet> newPets = petData.map((item) => Pet.fromJson(item)).toList();
+    // 调用同步服务
+    final syncService = DataSyncService(_isar);
+    await syncService.runAllSync();
 
-        await _isar.writeTxn(() async {
-          await _isar.abilitys.putAll(abilities);
-          await _isar.pets.putAll(newPets);
-        });
-      } catch (e) {
-        debugPrint("Data Init Error: $e");
-      }
-    }
-
-    final allPets = await _isar.pets.where().findAll();
+    // 加载 UI 所需数据
+    final allPets = await _isar.petModels.where().findAll(); // 直接使用 PetModel 数据模型
+    
     if (mounted) {
       setState(() {
-        _pokedex = allPets;
+        _pictorialBookId = allPets;
         _plugins = [
-          calc.CalcPlugin(pokedex: _pokedex),
+          calc.CalcPlugin(pictorialBookId: _pictorialBookId),
           update_pet_data.UpdatePetDataPlugin(),
           auto_script.AutoScriptPlugin()
         ];
@@ -165,6 +163,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
       });
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +178,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
     final settings = widget.settings;
     final Color currentEffectiveColor = settings.isColorLocked
         ? settings.selectedType.themeColor
-        : (_pokedex.isNotEmpty ? _pokedex[_selectedIndex].types[0].themeColor : Colors.blue);
+        : (_pictorialBookId.isNotEmpty ? _pictorialBookId[_selectedIndex].types[0].themeColor : Colors.blue);
 
     final Color backgroundColor = Color.lerp(
       const Color.fromARGB(255, 0, 0, 0),
@@ -263,7 +262,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
       index: _currentTab,
       children: [
         PokedexTab(
-          pokedex: _pokedex,
+          pictorialBookId: _pictorialBookId,
           selectedIndex: _selectedIndex,
           onSelected: (index) => setState(() => _selectedIndex = index),
           accentColor: accentColor,
@@ -273,6 +272,8 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           accentColor: accentColor,
           isar: _isar,
         ),
+        MapTab(plugins: _plugins, accentColor: accentColor),
+        
         PluginsTab(plugins: _plugins, accentColor: accentColor),
         SettingsTab(
           accentColor: accentColor,
@@ -314,9 +315,11 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           const SizedBox(height: 12),
           _buildNavBtn(1, Icons.groups_rounded, "聊天室", accentColor),
           const SizedBox(height: 12),
-          _buildNavBtn(2, Icons.extension_rounded, "插件", accentColor),
+          _buildNavBtn(2, Icons.map_rounded, "地图", accentColor),
           const SizedBox(height: 12),
-          _buildNavBtn(3, Icons.settings_rounded, "设置", accentColor),
+          _buildNavBtn(3, Icons.extension_rounded, "插件",accentColor),
+          const SizedBox(height: 12),
+          _buildNavBtn(4, Icons.settings_rounded, "设置", accentColor),
         ],
       ),
     );

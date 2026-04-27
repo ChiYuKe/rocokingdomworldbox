@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../models/plugin_interface.dart';
-import '../../models/pet.dart';
+import '../../models/pet_model.dart';
 import '../../widgets/plugin_page_template.dart'; // 引入模板
 import 'widgets/contrast_ui.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class CalcPlugin implements RocoPlugin {
-  final List<Pet> pokedex;
-  CalcPlugin({required this.pokedex});
+  final List<PetModel> pictorialBookId;
+  CalcPlugin({required this.pictorialBookId});
 
   @override
   String get id => "com.roco.plugin.calc";
@@ -40,7 +40,7 @@ class CalcPlugin implements RocoPlugin {
       accentColor: accentColor,
       body: ContrastUI(
         accentColor: accentColor,
-        pokedex: pokedex,
+        pictorialBookId: pictorialBookId,
       ),
     );
   }

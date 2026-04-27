@@ -1,19 +1,18 @@
 import 'package:flutter/material.dart';
-import '../models/pet.dart';
+import '../models/pet_model.dart';
 import '../widgets/detail_panel.dart'; 
 import '../widgets/card/petcard.dart';
 
 
-
 class PokedexTab extends StatefulWidget {
-  final List<Pet> pokedex;
+  final List<PetModel> pictorialBookId;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final Color accentColor;
 
   const PokedexTab({
     super.key,
-    required this.pokedex,
+    required this.pictorialBookId,
     required this.selectedIndex,
     required this.onSelected,
     required this.accentColor,
@@ -32,13 +31,13 @@ class _PokedexTabState extends State<PokedexTab> {
     return Row(
       children: [
         PetListView(
-          pokedex: widget.pokedex,
+          pictorialBookId: widget.pictorialBookId,
           selectedIndex: widget.selectedIndex,
           onSelected: widget.onSelected,
         ),
         Expanded(
           child: DetailPanel(
-            pet: widget.pokedex[widget.selectedIndex],
+            pet_model: widget.pictorialBookId[widget.selectedIndex],
             accentColor: widget.accentColor,
             lockedIndex: _globalLockedIndex,
             onLockedIndexChanged: (index) {
@@ -56,10 +55,10 @@ class _PokedexTabState extends State<PokedexTab> {
 
 // 宠物列表组件 
 class PetListView extends StatefulWidget {
-  final List<Pet> pokedex;
+  final List<PetModel> pictorialBookId;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
-  const PetListView({super.key, required this.pokedex, required this.selectedIndex, required this.onSelected});
+  const PetListView({super.key, required this.pictorialBookId, required this.selectedIndex, required this.onSelected});
 
   @override
   State<PetListView> createState() => _PetListViewState();
@@ -108,6 +107,9 @@ class _PetListViewState extends State<PetListView> {
       },
     );
   }
+
+
+
 
 
   @override
@@ -281,9 +283,9 @@ class _PetListViewState extends State<PetListView> {
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                  itemCount: widget.pokedex.length,
+                  itemCount: widget.pictorialBookId.length,
                   itemBuilder: (context, index) => PetCard(
-                    pet: widget.pokedex[index],
+                    pet_model: widget.pictorialBookId[index],
                     index: index,
                     isSelected: widget.selectedIndex == index,
                     onSelected: (idx) => widget.onSelected(idx), 

@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 
 
 class PetCard extends StatelessWidget {
-  final dynamic pet; // 数据模型
+  final dynamic pet_model; // 数据模型
   final int index; // 当前宠物在列表中的索引
   final bool isSelected; // 是否被选中（用于高亮显示）
   final Function(int) onSelected; // 点击时的回调函数，传递当前宠物的索引
 
   const PetCard({
     super.key,
-    required this.pet,
+    required this.pet_model,
     required this.index,
     required this.isSelected,
     required this.onSelected,
@@ -38,7 +38,7 @@ class PetCard extends StatelessWidget {
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
-                          color: pet.types[0].themeColor.withOpacity(0.2),
+                          color: pet_model.types[0].themeColor.withOpacity(0.2),
                           blurRadius: 15,
                           spreadRadius: 1,
                         )
@@ -55,19 +55,22 @@ class PetCard extends StatelessWidget {
                       gradient: RadialGradient(
                         colors: [
                           isSelected
-                              ? pet.types[0].themeColor.withOpacity(0.4)
+                              ? pet_model.types[0].themeColor.withOpacity(0.4)
                               : Colors.white10,
                           Colors.transparent,
                         ],
                       ),
                     ),
                     child: ClipOval(
-                      child: Image.asset(
-                        'assets/avatars/pet_${pet.petId}.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.pets, color: Colors.white24, size: 28),
-                      ),
+                      child: Transform.scale(
+                          scale: 1.2, 
+                          child: Image.asset(
+                            'assets/Icon/BigHeadIcon256/${pet_model.id}.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(Icons.pets, color: Colors.white24, size: 28),
+                          ),
+                        ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -76,7 +79,7 @@ class PetCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          pet.name,
+                          pet_model.name,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 17,
@@ -88,11 +91,11 @@ class PetCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: pet.types[0].themeColor.withOpacity(0.5),
+                            color: pet_model.types[0].themeColor.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            pet.types[0].label,
+                            pet_model.types[0].label,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
@@ -110,10 +113,10 @@ class PetCard extends StatelessWidget {
               top: 12,
               right: 16,
               child: Text(
-                "#${pet.petId}",
+                "#${pet_model.pictorialBookId}",
                 style: TextStyle(
                   color: isSelected
-                      ? pet.types[0].themeColor.withOpacity(0.8)
+                      ? pet_model.types[0].themeColor.withOpacity(0.8)
                       : const Color.fromARGB(228, 255, 255, 255),
                   fontSize: 11,
                   fontWeight: FontWeight.w900,

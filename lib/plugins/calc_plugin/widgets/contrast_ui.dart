@@ -344,35 +344,42 @@ class _ContrastUIState extends State<ContrastUI> {
                   ),
                   const SizedBox(height: 4),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
+                      // 遍历精灵的所有属性，为每个属性生成一个颜色圆点
+                      ...pet.types.map((type) => Container(
+                        margin: const EdgeInsets.only(right: 4), // 圆点之间的间距
                         width: 6,
                         height: 6,
                         decoration: BoxDecoration(
-                          color: pet.types[0].themeColor,
+                          color: type.themeColor,
                           shape: BoxShape.circle,
                           boxShadow: [
-                            BoxShadow(color: pet.types[0].themeColor.withOpacity(0.3), blurRadius: 4)
+                            BoxShadow(
+                              color: type.themeColor.withOpacity(0.3),
+                              blurRadius: 4,
+                            )
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        pet.types[0].label.toUpperCase(),
-                        style: TextStyle(
-                          color: Colors.white24,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
+                      )).toList(),
+                      
+                      // 如果没有属性，显示默认灰色圆点
+                      if (pet.types.isEmpty)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.5),
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
                     ],
-                  ),
+                  )
                 ],
               ),
             ),
 
-            //  右侧：BST 总值 
+            // BST 总值 
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

@@ -14,7 +14,7 @@ class PluginsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(20),
+      margin: const EdgeInsets.all(10),
       decoration: const BoxDecoration(
         color: Color(0xFF2D2D2D),
         borderRadius: BorderRadius.all(Radius.circular(35)),

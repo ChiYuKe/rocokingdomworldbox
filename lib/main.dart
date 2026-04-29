@@ -17,11 +17,13 @@ import 'models/plugin_interface.dart';
 import 'plugins/calc_plugin/main.dart' as calc;
 import 'plugins/update_pet_data_plugin/main.dart' as update_pet_data;
 import 'plugins/auto_script_plugin/main.dart' as auto_script;
+import 'plugins/egg_group_plugin/main.dart' as egg_group;
 import 'models/settingsprovider.dart';
 import 'services/data_sync_service.dart';
 import 'models/pet_model.dart';
 import 'tabs/map_tab.dart';
 import 'models/sync_config.dart';
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,18 +53,15 @@ Future<void> main() async {
     debugPrint("Env Load Error: $e");
   }
 
-
-
-  
-
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL'] ?? "default_url",
     anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? "default_anon_key", 
   );
 
-  // 将 settings 实例传给根组件
+
   runApp(RocoPokedexApp(settings: settings)); 
 }
+
 
 class RocoPokedexApp extends StatelessWidget {
   final SettingsProvider settings;
@@ -70,7 +69,6 @@ class RocoPokedexApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 使用 ListenableBuilder 监听全局设置变化
     return ListenableBuilder(
       listenable: settings,
       builder: (context, child) {
@@ -96,6 +94,8 @@ class MainScaffold extends StatefulWidget {
   State<MainScaffold> createState() => _MainScaffoldState();
 }
 
+
+
 class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   late Isar _isar;
   List<PetModel> _pictorialBookId = [];
@@ -106,6 +106,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   int _currentTab = 0;
   int _selectedIndex = 0;
   bool _isMaximized = false;
+  bool _isAlwaysOnTop = false; // 置顶状态跟踪
 
   @override
   void initState() {
@@ -130,66 +131,89 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
     setState(() => _isMaximized = false);
   }
 
+  Future<void> _toggleAlwaysOnTop() async {
+    final bool isTop = await windowManager.isAlwaysOnTop();
+    await windowManager.setAlwaysOnTop(!isTop);
+    setState(() {
+      _isAlwaysOnTop = !isTop;
+    });
+  }
+
   Future<void> _initApp() async {
-    final dir = await getApplicationDocumentsDirectory();
-    
-    // 打开数据库 (确保包含所有 Schema)
-    _isar = await Isar.open(
-      [
-        SkillModelSchema, // 宠物技能特性模型
-        ChatMessageSchema, // 聊天消息模型
-        PetModelSchema,  // 宠物模型
-        SyncConfigSchema // 同步配置模型
-      ], 
-      directory: dir.path
-    );
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      
+      _isar = Isar.getInstance() ?? await Isar.open(
+        [
+          SkillModelSchema,
+          ChatMessageSchema,
+          PetModelSchema,
+          SyncConfigSchema
+        ], 
+        directory: dir.path
+      );
 
-    // 调用同步服务
-    final syncService = DataSyncService(_isar);
-    await syncService.runAllSync();
+      final syncService = DataSyncService(_isar);
+      await syncService.runAllSync();
 
-    // 加载 UI 所需数据
-    final allPets = await _isar.petModels.where().findAll(); // 直接使用 PetModel 数据模型
-    
-    if (mounted) {
-      setState(() {
-        _pictorialBookId = allPets;
-        _plugins = [
-          calc.CalcPlugin(pictorialBookId: _pictorialBookId),
-          update_pet_data.UpdatePetDataPlugin(),
-          auto_script.AutoScriptPlugin()
-        ];
-        _isLoading = false;
-      });
+      final allPets = await _isar.petModels.where().findAll();
+      
+      if (mounted) {
+        setState(() {
+          _pictorialBookId = allPets;
+          _plugins = [
+            calc.CalcPlugin(pictorialBookId: _pictorialBookId),
+            update_pet_data.UpdatePetDataPlugin(),
+            auto_script.AutoScriptPlugin(),
+            egg_group.EggGroupPlugin(allPets: _pictorialBookId),
+          ];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Initialization Error: $e");
     }
   }
 
+  Color _getCurrentThemeColor() {
+    final settings = widget.settings;
+    if (settings.isColorLocked) {
+      return settings.selectedType.themeColor;
+    }
+    
+    if (_pictorialBookId.isEmpty || _selectedIndex >= _pictorialBookId.length) {
+      return Colors.blue; 
+    }
+    
+    final currentPet = _pictorialBookId[_selectedIndex];
+    return currentPet.types.isNotEmpty ? currentPet.types[0].themeColor : Colors.blue;
+  }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+        body: Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
       );
     }
 
-    // 核心修改：背景色逻辑直接读取 widget.settings 中的持久化值
-    final settings = widget.settings;
-    final Color currentEffectiveColor = settings.isColorLocked
-        ? settings.selectedType.themeColor
-        : (_pictorialBookId.isNotEmpty ? _pictorialBookId[_selectedIndex].types[0].themeColor : Colors.blue);
-
+    final Color currentEffectiveColor = _getCurrentThemeColor();
     final Color backgroundColor = Color.lerp(
-      const Color.fromARGB(255, 0, 0, 0),
+      const Color(0xFF000000),
       currentEffectiveColor,
-      settings.colorIntensity,
-    )!;
+      widget.settings.colorIntensity,
+    ) ?? Colors.black;
 
     return Scaffold(
       body: Stack(
         children: [
-          RepaintBoundary(child: Container(color: backgroundColor)),
+          RepaintBoundary(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              color: backgroundColor,
+            ),
+          ),
           Row(
             children: [
               _buildNavigationRail(currentEffectiveColor),
@@ -203,14 +227,14 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           ),
           Positioned(
             top: 0, left: 0, right: 0,
-            child: _buildTopTitleBar(),
+            child: _buildTopTitleBar(currentEffectiveColor),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTopTitleBar() {
+  Widget _buildTopTitleBar(Color accentColor) {
     return Container(
       height: 33,
       decoration: BoxDecoration(
@@ -232,15 +256,22 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
               child: const DragToMoveArea(child: SizedBox.expand()),
             ),
           ),
-          _buildWindowControls(),
+          _buildWindowControls(accentColor),
         ],
       ),
     );
   }
 
-  Widget _buildWindowControls() {
+  Widget _buildWindowControls(Color accentColor) {
     return Row(
       children: [
+        // 置顶按钮：根据 _isAlwaysOnTop 切换图标和样式
+        WindowBtn(
+          icon: _isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined, 
+          onTap: _toggleAlwaysOnTop,
+          isActive: _isAlwaysOnTop,
+          activeColor: accentColor,
+        ),
         WindowBtn(icon: Icons.remove, onTap: () => windowManager.minimize()),
         WindowBtn(
           icon: _isMaximized ? Icons.filter_none : Icons.crop_square,
@@ -273,11 +304,10 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           isar: _isar,
         ),
         MapTab(plugins: _plugins, accentColor: accentColor),
-        
         PluginsTab(plugins: _plugins, accentColor: accentColor),
         SettingsTab(
           accentColor: accentColor,
-          settings: widget.settings, // 将 Provider 传入设置页
+          settings: widget.settings,
         ),
       ],
     );
@@ -286,7 +316,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
   Widget _buildNavigationRail(Color accentColor) {
     return Container(
       width: 80,
-      padding: const EdgeInsets.symmetric(vertical: 20),
+      padding: const EdgeInsets.symmetric(vertical: 30),
       color: Color.lerp(const Color(0xFF1A1A1A), accentColor, 0.05),
       child: Column(
         children: [
@@ -317,7 +347,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           const SizedBox(height: 12),
           _buildNavBtn(2, Icons.map_rounded, "地图", accentColor),
           const SizedBox(height: 12),
-          _buildNavBtn(3, Icons.extension_rounded, "插件",accentColor),
+          _buildNavBtn(3, Icons.extension_rounded, "插件", accentColor),
           const SizedBox(height: 12),
           _buildNavBtn(4, Icons.settings_rounded, "设置", accentColor),
         ],
@@ -329,6 +359,7 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
     final bool isSelected = _currentTab == index;
     return GestureDetector(
       onTap: () { 
+        if (_currentTab == index) return;
         setState(() => _currentTab = index);
         if (index == 1) {
           _chatTabKey.currentState?.initialize();
@@ -342,9 +373,6 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
         decoration: BoxDecoration(
           color: isSelected ? accentColor.withOpacity(0.9) : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
-          boxShadow: isSelected ? [
-            BoxShadow(color: accentColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
-          ] : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -370,13 +398,25 @@ class WindowBtn extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool isClose;
-  const WindowBtn({super.key, required this.icon, required this.onTap, this.isClose = false});
+  final bool isActive;
+  final Color? activeColor;
+
+  const WindowBtn({
+    super.key, 
+    required this.icon, 
+    required this.onTap, 
+    this.isClose = false,
+    this.isActive = false,
+    this.activeColor,
+  });
+
   @override
   State<WindowBtn> createState() => _WindowBtnState();
 }
 
 class _WindowBtnState extends State<WindowBtn> {
   bool _isHovered = false;
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -393,12 +433,14 @@ class _WindowBtnState extends State<WindowBtn> {
           decoration: BoxDecoration(
             color: _isHovered
                 ? (widget.isClose ? Colors.red.withOpacity(0.8) : Colors.white.withOpacity(0.1))
-                : Colors.transparent,
+                : (widget.isActive ? (widget.activeColor?.withOpacity(0.2) ?? Colors.white10) : Colors.transparent),
           ),
           child: Center(
             child: Icon(
               widget.icon,
-              color: _isHovered ? Colors.white : Colors.white.withOpacity(0.6),
+              color: widget.isActive 
+                  ? (widget.activeColor ?? Colors.white)
+                  : (_isHovered ? Colors.white : Colors.white.withOpacity(0.6)),
               size: widget.icon == Icons.filter_none ? 12 : 16,
             ),
           ),

@@ -245,19 +245,31 @@ class _DetailPanelState extends State<DetailPanel> {
           Container(
             width: 38,
             height: 38,
+            clipBehavior: Clip.antiAlias, 
             decoration: BoxDecoration(
               color: widget.accentColor.withOpacity(0.1),
-              shape: BoxShape.circle,
+              shape: BoxShape.rectangle, 
+              borderRadius: BorderRadius.circular(8), 
             ),
             child: Center(
               child: _abilityModel != null
-                ? Image.asset(
-                    _abilityModel!.icon, // 使用数据库中的图片路径
-                    width: 40,
-                    height: 40,
-                    errorBuilder: (context, _, __) => Icon(Icons.auto_awesome, color: widget.accentColor, size: 18),
-                  )
-                : Icon(Icons.hourglass_empty, color: widget.accentColor, size: 18),
+                  ? Image.asset(
+                      _abilityModel!.icon,
+                      // 关键点 3：建议图片宽高与容器一致或自适应
+                      width: 38, 
+                      height: 38,
+                      fit: BoxFit.cover, 
+                      errorBuilder: (context, _, __) => Icon(
+                        Icons.auto_awesome,
+                        color: widget.accentColor,
+                        size: 18,
+                      ),
+                    )
+                  : Icon(
+                      Icons.hourglass_empty,
+                      color: widget.accentColor,
+                      size: 18,
+                    ),
             ),
           ),
           const SizedBox(width: 15),

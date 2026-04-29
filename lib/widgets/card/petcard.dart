@@ -63,14 +63,14 @@ class PetCard extends StatelessWidget {
                     ),
                     child: ClipOval(
                       child: Transform.scale(
-                          scale: 1.2, 
-                          child: Image.asset(
-                            'assets/Icon/BigHeadIcon256/${pet_model.id}.png',
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.pets, color: Colors.white24, size: 28),
-                          ),
+                        scale: 1.2, 
+                        child: Image.asset(
+                          'assets/Icon/BigHeadIcon256/${pet_model.id}.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(Icons.pets, color: Colors.white24, size: 28),
                         ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),

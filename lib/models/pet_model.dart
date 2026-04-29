@@ -9,21 +9,21 @@ part 'pet_model.g.dart';
 
 enum PetType {
   ordinary(2, Color(0xFF6198B1), "普通"),
-  grass(3, Color(0xFF4EE473), "草系"),
-  fire(4, Color(0xFFBD4A20), "火系"),
-  water(5, Color(0xFF289EFF), "水系"),
+  grass(3, Color.fromARGB(255, 84, 202, 123), "草系"),
+  fire(4, Color.fromARGB(255, 226, 113, 72), "火系"),
+  water(5, Color.fromARGB(255, 106, 169, 254), "水系"),
   light(6, Color(0xFF4FC1FF), "光系"),
   mountain(8, Color(0xFFF8A73D), "地系"),
   ice(9, Color(0xFF4CCCFF), "冰系"),
-  dragon(10, Color(0xFFE42B2B), "龙系"),
+  dragon(10, Color.fromARGB(255, 237, 73, 98), "龙系"),
   electricity(11, Color(0xFFF0C850), "电系"),
   poison(12, Color(0xFFA364CF), "毒系"),
   insect(13, Color(0xFF97B346), "虫系"),
-  valiant(14, Color(0xFFFF814F), "武系"),
+  valiant(14, Color.fromARGB(255, 255, 150, 54), "武系"),
   wing(15, Color(0xFF47D1DB), "翼系"),
   cute(16, Color(0xFFFF8093), "萌系"),
   dark(17, Color(0xFF9D56CF), "幽系"), 
-  evil(18, Color(0xFFE94078), "恶系"),
+  evil(18, Color.fromARGB(255, 207, 70, 122), "恶系"),
   mechanical(19, Color(0xFF3EC2A1), "机械系"),
   magical(20, Color(0xFFBDA4FA), "幻系");
 

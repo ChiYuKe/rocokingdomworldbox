@@ -23,7 +23,7 @@ import 'services/data_sync_service.dart';
 import 'models/pet_model.dart';
 import 'tabs/map_tab.dart';
 import 'models/sync_config.dart';
-
+import 'models/pet_evolution.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -148,7 +148,8 @@ class _MainScaffoldState extends State<MainScaffold> with WindowListener {
           SkillModelSchema,
           ChatMessageSchema,
           PetModelSchema,
-          SyncConfigSchema
+          SyncConfigSchema,
+          PetEvolutionSchema,
         ], 
         directory: dir.path
       );

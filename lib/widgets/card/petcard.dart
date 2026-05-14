@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-
 class PetCard extends StatelessWidget {
-  final dynamic pet_model; // 数据模型
-  final int index; // 当前宠物在列表中的索引
-  final bool isSelected; // 是否被选中（用于高亮显示）
-  final Function(int) onSelected; // 点击时的回调函数，传递当前宠物的索引
+  final dynamic pet_model;
+  final int index;
+  final bool isSelected;
+  final Function(int) onSelected;
+  final int stackCount; // 叠加数量
 
   const PetCard({
     super.key,
@@ -13,118 +13,117 @@ class PetCard extends StatelessWidget {
     required this.index,
     required this.isSelected,
     required this.onSelected,
+    this.stackCount = 1,
   });
-
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: () => onSelected(index),
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.black.withOpacity(0.8)
-                    : const Color.fromARGB(1, 83, 81, 81).withOpacity(0.3),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: pet_model.types[0].themeColor.withOpacity(0.2),
-                          blurRadius: 15,
-                          spreadRadius: 1,
-                        )
-                      ]
-                    : [],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          isSelected
-                              ? pet_model.types[0].themeColor.withOpacity(0.4)
-                              : Colors.white10,
-                          Colors.transparent,
-                        ],
-                      ),
-                    ),
-                    child: ClipOval(
-                      child: Transform.scale(
-                        scale: 1.2, 
-                        child: Image.asset(
-                          'assets/Icon/BigHeadIcon256/${pet_model.id}.png',
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(Icons.pets, color: Colors.white24, size: 28),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          pet_model.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // 视觉叠加层
+        if (stackCount > 1)
+          Positioned(
+            top: 5, left: 5, right: -5, bottom: -5,
+            child: _buildBackDecoration(0.08),
+          ),
+        if (stackCount > 2)
+          Positioned(
+            top: 10, left: 10, right: -10, bottom: -10,
+            child: _buildBackDecoration(0.04),
+          ),
+
+        // 主卡片
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF2D2D2D) : Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: isSelected ? Colors.white24 : Colors.transparent, width: 1),
+          ),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 20, 8, 16),
+                child: Column(
+                  children: [
+                    // 头像部分
+                    Expanded(
+                      child: Center(
+                        child: Transform.scale(
+                          scale: 1.3,
+                          child: Image.asset(
+                            'assets/Icon/BigHeadIcon256/${pet_model.id}.png',
+                            fit: BoxFit.contain,
+                            color: isSelected ? null : Colors.white.withOpacity(0.8),
+                            colorBlendMode: isSelected ? null : BlendMode.modulate,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.pets, color: Colors.white24, size: 24),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // 名称
+                    Text(
+                      pet_model.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 6),
+                    // 类型标签
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: (pet_model.types as List).map<Widget>((type) {
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: pet_model.types[0].themeColor.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(6),
+                            color: isSelected ? type.themeColor.withOpacity(0.8) : type.themeColor.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            pet_model.types[0].label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            type.label,
+                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
                           ),
-                        ),
-                      ],
+                        );
+                      }).toList(),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 16,
-              child: Text(
-                "#${pet_model.pictorialBookId}",
-                style: TextStyle(
-                  color: isSelected
-                      ? pet_model.types[0].themeColor.withOpacity(0.8)
-                      : const Color.fromARGB(228, 255, 255, 255),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
+                  ],
                 ),
               ),
-            ),
-          ],
+              // 角标ID
+              Positioned(
+                top: 12, right: 12,
+                child: Text(
+                  "#${pet_model.pictorialBookId}",
+                  style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 9, fontWeight: FontWeight.bold, fontFamily: 'Monospace'),
+                ),
+              ),
+              // 叠加提示
+              if (stackCount > 1)
+                Positioned(
+                  bottom: 8, right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: Colors.black26, shape: BoxShape.circle),
+                    child: Text("+${stackCount - 1}", style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+            ],
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildBackDecoration(double opacity) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(opacity),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10, width: 1),
       ),
     );
   }

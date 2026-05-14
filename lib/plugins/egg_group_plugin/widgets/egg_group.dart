@@ -14,6 +14,7 @@ class EggGroupUI extends StatefulWidget {
 class _EggGroupUIState extends State<EggGroupUI> {
   PetModel? _selectedPet;
   Map<int, List<PetModel>> _groupedResults = {};
+  Map<int, bool> _expandedStates = {};
   final TextEditingController _searchController = TextEditingController();
   
   List<PetModel> _searchSuggestions = [];
@@ -68,6 +69,7 @@ class _EggGroupUIState extends State<EggGroupUI> {
     setState(() {
       _selectedPet = target;
       _groupedResults = {};
+      _expandedStates = {};
       if (target.eggGroup.isEmpty || target.eggGroup.contains(0)) return;
 
       for (var p in widget.allPets) {
@@ -81,6 +83,12 @@ class _EggGroupUIState extends State<EggGroupUI> {
           }
         }
       }
+
+      // 默认所有组都展开
+      for (var key in _groupedResults.keys) {
+        _expandedStates[key] = true;
+      }
+
       _groupedResults.forEach((key, list) => list.sort((a, b) => a.pictorialBookId.compareTo(b.pictorialBookId)));
     });
   }
@@ -223,7 +231,12 @@ class _EggGroupUIState extends State<EggGroupUI> {
 
   Widget _buildSelectedInfo() {
     final baby = _findBaseForm(_selectedPet!);
-    final bool isGenderless = _selectedPet!.proportionMale == -1;
+    final int gender = _selectedPet!.proportionMale;
+    final bool isGenderless = gender == -1;
+    
+    // 判断是否存在对应性别（10为纯雄，0为纯雌）
+    final bool hasFemale = !isGenderless && gender < 10;
+    final bool hasMale = !isGenderless && gender > 0;
 
     return Container(
       width: double.infinity,
@@ -272,7 +285,7 @@ class _EggGroupUIState extends State<EggGroupUI> {
                         const SizedBox(width: 8),
                         Text("No.${_selectedPet!.pictorialBookId}", style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 12)),
                         const Spacer(),
-                        Text(_getGenderText(_selectedPet!.proportionMale), style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11)),
+                        Text(_getGenderText(gender), style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11)),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -292,7 +305,8 @@ class _EggGroupUIState extends State<EggGroupUI> {
                               "决定子代种类", 
                               "孵化获得：${baby.name}", 
                               Colors.orangeAccent,
-                              Icons.egg_outlined
+                              Icons.egg_outlined,
+                              isEnabled: hasFemale,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -302,7 +316,8 @@ class _EggGroupUIState extends State<EggGroupUI> {
                               "遗传技能/个体", 
                               "可提供遗传技能", 
                               Colors.lightBlueAccent,
-                              Icons.auto_awesome
+                              Icons.auto_awesome,
+                              isEnabled: hasMale,
                             ),
                           ),
                         ],
@@ -317,72 +332,162 @@ class _EggGroupUIState extends State<EggGroupUI> {
     );
   }
 
-  Widget _buildInfoBlock(String label, String title, String desc, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 10, color: color.withOpacity(0.7)),
-              const SizedBox(width: 4),
-              Text(label, style: TextStyle(color: color.withOpacity(0.7), fontSize: 9, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(title, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
-          Text(desc, style: TextStyle(color: color.withOpacity(0.5), fontSize: 9), maxLines: 1, overflow: TextOverflow.ellipsis),
-        ],
+  Widget _buildInfoBlock(String label, String title, String desc, Color color, IconData icon, {bool isEnabled = true}) {
+    // 如果不可用，则使用灰色调
+    final displayColor = isEnabled ? color : Colors.white24;
+    final displayOpacity = isEnabled ? 1.0 : 0.4;
+
+    return Opacity(
+      opacity: displayOpacity,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: displayColor.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: displayColor.withOpacity(0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 10, color: displayColor.withOpacity(0.7)),
+                const SizedBox(width: 4),
+                Text(label, style: TextStyle(color: displayColor.withOpacity(0.7), fontSize: 9, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(title, style: TextStyle(color: displayColor, fontSize: 12, fontWeight: FontWeight.bold)),
+            Text(desc, style: TextStyle(color: displayColor.withOpacity(0.5), fontSize: 9), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
       ),
     );
   }
+
 
   Widget _buildResultList() {
     if (_selectedPet == null) return const SizedBox.shrink();
     final sortedKeys = _groupedResults.keys.toList()..sort((a, b) => b.compareTo(a));
 
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 20),
-      itemCount: sortedKeys.length,
-      itemBuilder: (context, index) {
-        int count = sortedKeys[index];
-        List<PetModel> pets = _groupedResults[count]!;
-        bool isPerfect = count >= 2;
+    return CustomScrollView(
+      slivers: [
+        ...sortedKeys.map((count) {
+          List<PetModel> pets = _groupedResults[count]!;
+          bool isPerfect = count >= 2;
+          bool isExpanded = _expandedStates[count] ?? true;
+          final Color themeColor = isPerfect ? Colors.orangeAccent : Colors.greenAccent;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Row(
-                children: [
-                  Icon(isPerfect ? Icons.whatshot : Icons.eco, size: 14, color: isPerfect ? Colors.orangeAccent : Colors.greenAccent),
-                  const SizedBox(width: 6),
-                  Text(isPerfect ? "完美匹配 (双蛋组重合)" : "基础匹配 (单蛋组重合)", 
-                    style: TextStyle(color: isPerfect ? Colors.orangeAccent : Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                  const Spacer(),
-                  Text("${pets.length} 只", style: const TextStyle(color: Colors.white24, fontSize: 11)),
-                ],
+          return SliverMainAxisGroup(
+            slivers: [
+              // 吸顶标题栏 + 点击折叠逻辑
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SliverHeaderDelegate(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _expandedStates[count] = !isExpanded;
+                      });
+                    },
+                    child: Container(
+                      color: const Color(0xFF1A1A1A), // 必须有背景色遮挡滚动内容
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: themeColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: themeColor.withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(isPerfect ? Icons.whatshot : Icons.eco, size: 14, color: themeColor),
+                            const SizedBox(width: 8),
+                            Text(
+                              isPerfect ? "完美匹配 (双蛋组重合)" : "基础匹配 (单蛋组重合)", 
+                              style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12)
+                            ),
+                            const Spacer(),
+                            Text("${pets.length} 只", style: const TextStyle(color: Colors.white24, fontSize: 11)),
+                            const SizedBox(width: 8),
+                            // 添加折叠箭头图标
+                            Icon(
+                              isExpanded ? Icons.expand_less : Icons.expand_more,
+                              size: 16,
+                              color: Colors.white24,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  maxHeight: 50,
+                  minHeight: 50,
+                ),
               ),
-            ),
-            ...pets.map((p) => ListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-              onTap: () => _handleSelectPet(p),
-              leading: _buildPetAvatar(p, size: 36),
-              title: Text(p.name, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-              subtitle: Text(p.eggGroup.map((id) => _eggGroupNameMap[id]).join(' · '), style: const TextStyle(color: Colors.white38, fontSize: 10)),
-              trailing: Text("No.${p.pictorialBookId}", style: const TextStyle(color: Colors.white24, fontSize: 10)),
-            )).toList(),
-          ],
-        );
-      },
+              // 根据展开状态决定是否渲染列表
+              if (isExpanded)
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final p = pets[index];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+                        onTap: () => _handleSelectPet(p),
+                        leading: _buildPetAvatar(p, size: 36),
+                        title: Text(p.name, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+                        subtitle: Text(
+                          p.eggGroup.map((id) => _eggGroupNameMap[id]).join(' · '), 
+                          style: const TextStyle(color: Colors.white38, fontSize: 10)
+                        ),
+                        trailing: Text("No.${p.pictorialBookId}", style: const TextStyle(color: Colors.white24, fontSize: 10)),
+                      );
+                    },
+                    childCount: pets.length,
+                  ),
+                )
+              else
+                const SliverToBoxAdapter(child: SizedBox.shrink()),
+              
+              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            ],
+          );
+        }),
+      ],
     );
+  }
+
+}
+
+// 辅助类：用于定义吸顶头部的行为
+class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  final double maxHeight;
+  final double minHeight;
+
+  _SliverHeaderDelegate({
+    required this.child,
+    required this.maxHeight,
+    required this.minHeight,
+  });
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return SizedBox.expand(child: child);
+  }
+
+  @override
+  double get maxExtent => maxHeight;
+
+  @override
+  double get minExtent => minHeight;
+
+  @override
+  bool shouldRebuild(covariant _SliverHeaderDelegate oldDelegate) {
+    return oldDelegate.maxHeight != maxHeight ||
+           oldDelegate.minHeight != minHeight ||
+           oldDelegate.child != child;
   }
 }
